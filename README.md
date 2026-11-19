@@ -67,6 +67,14 @@ GOOS=js GOARCH=wasm go build -o logpulse.wasm ./cmd/wasm
 
 GitHub Actions: `ci.yml` (vet и тесты на Linux/Windows/macOS), `pages.yml` (собирает WASM-демо и публикует на Pages), `release.yml` (тег `v*` → бинарники под все платформы в Releases).
 
+## Проверки
+
+Юнит-тесты парсера, статистики и вывода; тесты настоящего бинарника (файл, stdin, `-json`, несколько файлов, коды выхода); браузерные сценарии демо с проверкой доступности (axe) в светлой и тёмной теме. Релизные бинарники публикуются с подтверждением происхождения: `gh attestation verify <файл> --repo Oleg4311/logpulse`.
+
 ## Лицензия
 
-MIT
+MIT · Сделано с помощью Claude
+
+## English
+
+**logpulse** is a fast access-log analyzer in Go: feed it an nginx/Apache log or JSON lines and get request rate, status-code breakdown, latency percentiles, top and slowest endpoints (paths like `/users/42` are grouped as `/users/:id`) and detected anomalies (traffic spikes, bursts of 5xx). `tail -f access.log | logpulse -live` gives a live dashboard, `-json` a machine-readable report. The same analysis code runs in the browser demo (Go → WebAssembly): https://oleg4311.github.io/logpulse/

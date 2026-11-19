@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>logpulse — access log analyzer</title>
+<meta name="description" content="Paste an nginx or JSON access log and get rps, latency percentiles, top endpoints and anomalies. Runs in your browser via Go WebAssembly.">
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1b1f24;--mut:#5b6573;--line:#dde1e7;--acc:#0b6bcb;--acc-ink:#fff;--g:#17803d;--c:#0e7490;--y:#b7791f;--r:#b42318}
+@media(prefers-color-scheme:dark){:root{--bg:#14171b;--card:#1d2127;--ink:#eef0f3;--mut:#9aa4b2;--line:#2c323b;--acc:#5aa9ff;--acc-ink:#0b1220;--g:#4ade80;--c:#22d3ee;--y:#fbbf24;--r:#f87171}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:900px;margin:0 auto;padding:24px 16px 56px}
+h1{margin:0;font-size:1.7rem}h1 small{font-weight:400;color:var(--mut);font-size:1rem}
+h2{font-size:1rem;margin:0 0 10px}
+.sub{color:var(--mut);margin:4px 0 18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+textarea{width:100%;height:130px;resize:vertical;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px;font:12px/1.4 ui-monospace,Consolas,monospace}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+button,.file{font:inherit;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;padding:8px 12px;cursor:pointer}
+button.primary{background:var(--acc);border-color:var(--acc);color:var(--acc-ink)}
+.file input{display:none}
+a{color:var(--acc)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.stat{border:1px solid var(--line);border-radius:10px;padding:10px}
+.stat span{display:block;color:var(--mut);font-size:.8rem}.stat b{font-size:1.3rem}
+.bars div{display:grid;grid-template-columns:44px 1fr 120px;gap:10px;align-items:center;margin:6px 0}
+.bars i{display:block;height:12px;border-radius:6px;min-width:2px}
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+td,th{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line)}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+td.e{font-family:ui-monospace,Consolas,monospace;word-break:break-all}
+.an{border-left:4px solid var(--r);padding:4px 10px;margin:6px 0;background:var(--bg);border-radius:4px}
+.mut{color:var(--mut)}
+#msg{color:var(--r)}
+</style>
+</head>
+<body>
+<main>
+<h1>logpulse <small>access log analyzer · Go + WebAssembly</small></h1>
+<p class="sub">Paste an nginx/Apache access log or JSON lines. Everything is analyzed locally in your browser, nothing is uploaded.</p>
+
+<div class="card">
+  <textarea id="log" placeholder='203.0.113.5 - - [10/Oct/2026:13:55:36 +0000] "GET /api/users/42 HTTP/1.1" 200 1532 "-" "curl/8.0" 0.043'></textarea>
+  <div class="btns">
+    <button class="primary" id="run" disabled>Analyze</button>
+    <button id="sample" disabled>Load sample</button>
+    <label class="file">Open file…<input type="file" id="file"></label>
+    <span id="msg" class="mut">Loading WebAssembly…</span>
+  </div>
+</div>
+
+<div id="out" hidden>
+  <div class="card"><div class="stats" id="stats"></div></div>
+  <div class="card"><h2>Status codes</h2><div class="bars" id="codes"></div></div>
+  <div class="card" id="latCard"><h2>Latency (ms)</h2><div class="stats" id="lat"></div></div>
+  <div class="card"><h2>Top endpoints</h2><table id="top"></table></div>
+  <div class="card" id="slowCard"><h2>Slowest endpoints (p95)</h2><table id="slow"></table></div>
+  <div class="card" id="anCard"><h2>Anomalies</h2><div id="an"></div></div>
+</div>
+<p class="mut">Source: <a href="https://github.com/Oleg4311/logpulse">github.com/Oleg4311/logpulse</a> — the same Go code also ships as a CLI.</p>
+</main>
+<script src="wasm_exec.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmtB=b=>{const u=['B','KiB','MiB','GiB','TiB'];let i=0;while(b>=1024&&i<4){b/=1024;i++}return (i?b.toFixed(1):b)+' '+u[i]};
+const fmtT=s=>s.replace('T',' ').replace(/(\.\d+)?Z$/,' UTC').replace(/[+-]\d\d:\d\d$/,'');
+const colors={'2xx':'var(--g)','3xx':'var(--c)','4xx':'var(--y)','5xx':'var(--r)'};
+const stat=(l,v)=>`<div class="stat"><span>${l}</span><b>${v}</b></div>`;
+
+function render(r){
+  $('out').hidden=false;
+  if(!r.total){$('stats').innerHTML=stat('Requests',0)+stat('Skipped lines',r.skipped);
+    ['codes','top','slow','an','lat'].forEach(i=>$(i).innerHTML='');return}
+  $('stats').innerHTML=stat('Requests',r.total)+stat('Skipped lines',r.skipped)+stat('Avg rate',r.avgRps.toFixed(2)+' req/s')+
+    stat('Peak rate',r.peakRps.toFixed(1)+' req/s')+stat('Traffic',fmtB(r.bytes))+stat('Period',fmtT(r.start)+'<br>→ '+fmtT(r.end).slice(11));
+  $('codes').innerHTML=Object.keys(r.statusClasses).sort().map(k=>{const n=r.statusClasses[k],f=n/r.total*100;
+    return `<div><span>${k}</span><i style="width:${f}%;background:${colors[k]||'var(--mut)'}"></i><span class="mut">${f.toFixed(1)}% · ${n}</span></div>`}).join('');
+  $('latCard').hidden=!r.hasLatency;
+  if(r.hasLatency){const l=r.latency;$('lat').innerHTML=stat('p50',l.p50.toFixed(1))+stat('p90',l.p90.toFixed(1))+stat('p95',l.p95.toFixed(1))+stat('p99',l.p99.toFixed(1))+stat('max',l.max.toFixed(1))}
+  $('top').innerHTML='<tr><th class="n">Count</th><th>Endpoint</th><th class="n">5xx</th></tr>'+r.topPaths.map(p=>`<tr><td class="n">${p.count}</td><td class="e">${esc(p.endpoint)}</td><td class="n">${p.errors5xx||''}</td></tr>`).join('');
+  $('slowCard').hidden=!r.slowPaths.length;
+  $('slow').innerHTML='<tr><th class="n">p95 ms</th><th>Endpoint</th></tr>'+r.slowPaths.map(p=>`<tr><td class="n">${p.p95ms.toFixed(1)}</td><td class="e">${esc(p.endpoint)}</td></tr>`).join('');
+  $('anCard').hidden=false;
+  $('an').innerHTML=r.anomalies.length?r.anomalies.map(a=>`<div class="an"><b>${esc(fmtT(a.time))}</b> · ${a.kind} — ${esc(a.detail)}</div>`).join(''):'<span class="mut">No anomalies detected.</span>';
+}
+function analyze(){
+  const text=$('log').value;
+  if(!text.trim()){$('msg').textContent='Paste some log lines first.';return}
+  $('msg').textContent='';
+  render(JSON.parse(logpulseAnalyze(text,10)));
+}
+$('run').onclick=analyze;
+$('file').onchange=async e=>{const f=e.target.files[0];if(f){$('log').value=await f.text();analyze()}};
+$('sample').onclick=async()=>{const t=await (await fetch('sample.log')).text();$('log').value=t;analyze()};
+
+(async()=>{
+  try{
+    const go=new Go();
+    const res=await WebAssembly.instantiateStreaming(fetch('logpulse.wasm'),go.importObject);
+    go.run(res.instance);
+    $('run').disabled=$('sample').disabled=false;$('msg').textContent='Ready.';
+  }catch(err){$('msg').textContent='Failed to load WebAssembly: '+err}
+})();
+</script>
+</body>
+</html>
