@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/Oleg4311/logpulse/actions/workflows/ci.yml/badge.svg)](https://github.com/Oleg4311/logpulse/actions/workflows/ci.yml)
 
-Fast access-log analyzer written in Go. Feed it an nginx/Apache log or JSON lines and get request rate, status-code breakdown, latency percentiles, top and slowest endpoints, and detected anomalies (traffic spikes, bursts of 5xx).
+Быстрый анализатор access-логов на Go. Подайте ему лог nginx/Apache или JSON-строки и получите частоту запросов, разбивку по кодам ответа, перцентили задержки, самые частые и самые медленные эндпоинты, а также найденные аномалии (всплески трафика и пачки ошибок 5xx).
 
-**Live demo (runs in your browser via Go → WebAssembly):** https://oleg4311.github.io/logpulse/
+**Демо в браузере (Go → WebAssembly):** https://oleg4311.github.io/logpulse/ — анализ идёт локально, логи никуда не отправляются.
 
 ```
 logpulse report
@@ -20,53 +20,53 @@ Anomalies
   13:03:00  errors 41 of 60 requests are 5xx
 ```
 
-## Install
+## Установка
 
-Download a binary for Windows, Linux or macOS from [Releases](https://github.com/Oleg4311/logpulse/releases), or build it:
+Скачайте бинарник для Windows, Linux или macOS на странице [Releases](https://github.com/Oleg4311/logpulse/releases) или соберите сами:
 
 ```
 go install github.com/Oleg4311/logpulse/cmd/logpulse@latest
 ```
 
-## Usage
+## Использование
 
 ```
-logpulse access.log                    # one or more files
-cat access.log | logpulse              # stdin
-tail -f access.log | logpulse -live    # live-updating dashboard
-logpulse -json -top 20 access.log      # machine-readable report
+logpulse access.log                    # один или несколько файлов
+cat access.log | logpulse              # из stdin
+tail -f access.log | logpulse -live    # живая панель, обновляется во время чтения
+logpulse -json -top 20 access.log      # отчёт в формате JSON
 ```
 
-| Flag | Meaning |
+| Флаг | Назначение |
 |---|---|
-| `-format auto\|nginx\|json` | line format, `auto` decides per line |
-| `-top N` | number of endpoints listed (default 10) |
-| `-json` | print the report as JSON |
-| `-live` | redraw the report twice a second while reading |
-| `-no-color` | disable ANSI colors |
+| `-format auto\|nginx\|json` | формат строк, `auto` определяет его для каждой строки |
+| `-top N` | сколько эндпоинтов показывать (по умолчанию 10) |
+| `-json` | вывести отчёт в JSON |
+| `-live` | перерисовывать отчёт дважды в секунду |
+| `-no-color` | отключить цвета ANSI |
 
-### Supported formats
+### Поддерживаемые форматы
 
-- **nginx / Apache combined**, optionally followed by `request_time` (`... "ua" 0.123` or `rt=0.123`) for latency.
-- **JSON lines** with common field names: `time|ts|timestamp|@timestamp`, `method|verb`, `path|uri|url|request_uri`, `status|code`, `bytes|size|body_bytes_sent`, and latency as `duration_ms|latency_ms` (milliseconds) or `duration|latency|request_time|elapsed` (seconds). Timestamps may be RFC 3339 or unix seconds/milliseconds.
+- **nginx / Apache combined**, при желании с `request_time` в конце строки (`... "ua" 0.123` или `rt=0.123`): он используется как задержка.
+- **JSON-строки** с типовыми именами полей: `time|ts|timestamp|@timestamp`, `method|verb`, `path|uri|url|request_uri`, `status|code`, `bytes|size|body_bytes_sent`; задержка в `duration_ms|latency_ms` (миллисекунды) или `duration|latency|request_time|elapsed` (секунды). Время: RFC 3339 или unix в секундах/миллисекундах.
 
-## How it works
+## Как это работает
 
-- Paths are normalized (`/users/42?x=1` → `/users/:id`) so endpoints are grouped.
-- Percentiles use the nearest-rank method.
-- Time is bucketed (1 s, 1 min or 1 h depending on the log span). A bucket is a **spike** when it has ≥ 5 requests and exceeds mean + 3σ, and an **error burst** when ≥ 50 % of ≥ 5 requests are 5xx.
-- The analysis packages (`internal/parse`, `internal/stats`) are shared by the CLI (`cmd/logpulse`) and the WebAssembly build (`cmd/wasm`).
+- Пути нормализуются (`/users/42?x=1` → `/users/:id`), чтобы эндпоинты группировались.
+- Перцентили считаются методом ближайшего ранга.
+- Время делится на интервалы (1 с, 1 мин или 1 ч в зависимости от длины лога). Интервал считается **всплеском**, если в нём не менее 5 запросов и их больше среднего плюс 3σ, и **пачкой ошибок**, если не менее половины из ≥ 5 запросов дали 5xx.
+- Пакеты анализа (`internal/parse`, `internal/stats`) общие для CLI (`cmd/logpulse`) и сборки WebAssembly (`cmd/wasm`).
 
-## Development
+## Разработка
 
 ```
 go test ./...
-go run ./cmd/gensample > testdata/sample.log   # regenerate the demo log
+go run ./cmd/gensample > testdata/sample.log   # пересоздать демо-лог
 GOOS=js GOARCH=wasm go build -o logpulse.wasm ./cmd/wasm
 ```
 
-GitHub Actions: `ci.yml` (vet + tests on Linux/Windows/macOS), `pages.yml` (builds the WASM demo and deploys to Pages), `release.yml` (tag `v*` → cross-compiled binaries in Releases).
+GitHub Actions: `ci.yml` (vet и тесты на Linux/Windows/macOS), `pages.yml` (собирает WASM-демо и публикует на Pages), `release.yml` (тег `v*` → бинарники под все платформы в Releases).
 
-## License
+## Лицензия
 
 MIT
